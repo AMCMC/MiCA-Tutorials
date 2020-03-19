@@ -9,21 +9,21 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Install and load required packages
 
-```{r environment, include=FALSE}
+```{r environment, include=T}
 library(phyloseq)
 library(mixOmics)
 ```
 
 Read in data
 
-```{r data, include=FALSE}
+```{r data, include=T}
 ps <- readRDS("Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS")
 ps@sam_data$Treatment <- ps@sam_data$Randomization
 ```
 
 plot loadings
 
-```{r plot loadings, include=FALSE}
+```{r plot loadings, include=T}
 ps.mixomics <- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122)
 ps.mixomics <- prune_samples(ps.mixomics@sam_data$Subject_ID %in% names(which(table(ps.mixomics@sam_data$Subject_ID)!=1)), ps.mixomics)
 
