@@ -1,0 +1,49 @@
+---
+title: "Multi-level analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Install and load required packages
+
+```{r environment, include=FALSE}
+library(phyloseq)
+library(mixOmics)
+```
+
+Read in data
+
+```{r data, include=FALSE}
+ps <- readRDS("Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS")
+ps@sam_data$Treatment <- ps@sam_data$Randomization
+```
+
+plot loadings
+
+```{r plot loadings, include=FALSE}
+ps.mixomics <- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122)
+ps.mixomics <- prune_samples(ps.mixomics@sam_data$Subject_ID %in% names(which(table(ps.mixomics@sam_data$Subject_ID)!=1)), ps.mixomics)
+
+diverse.pca = pca(ps.mixomics@otu_table+1, ncomp = 10, logratio = 'CLR', multilevel = ps.mixomics@sam_data$Subject_ID)
+plot(diverse.pca)
+
+df <- as.data.frame(diverse.pca$loadings$X[,1:2])
+df <- cbind(df, ps@tax_table@.Data[rownames(df),])
+df$Abundance <- taxa_sums(ps.mixomics)[rownames(df)]
+
+phyl_abun <- aggregate(df$Abundance, by=list(df$Phylum), FUN=sum)
+df <- df[df$Phylum %in% phyl_abun[order(phyl_abun[,2], decreasing = T)[1:9],1],]
+
+p <- ggplot(df, aes(x=PC1, y=PC2, color=Family,size=Abundance)) + 
+  theme_bw() + 
+  geom_hline(yintercept = 0, color = "black", size = 1) +
+  geom_vline(xintercept = 0, color = "black", size = 1) +
+  geom_point() + facet_wrap(~Phylum); plot(p)
+```
+
+
+
+
