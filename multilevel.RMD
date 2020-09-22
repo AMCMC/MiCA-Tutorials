@@ -1,3 +1,11 @@
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
 ---
 title: "Multi-level analysis"
 output: html_document
@@ -7,43 +15,102 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Install and load required packages
+# Install and load required packages
 
 ```{r environment, include=T}
 library(phyloseq)
 library(mixOmics)
 ```
 
-Read in data
+# Read & wrangle data
 
 ```{r data, include=T}
 ps <- readRDS("Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS")
 ps@sam_data$Treatment <- ps@sam_data$Randomization
 ```
 
-plot loadings
+Normalize the data by rarefication without replacement.
 
-```{r plot loadings, include=T}
-ps.mixomics <- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122)
+```{r rarefy, include=T}
+ps.mixomics <- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122, replace = F)
+```
+
+Only use subjects which have at least 2 time points 
+
+```{r subset, include=T}
 ps.mixomics <- prune_samples(ps.mixomics@sam_data$Subject_ID %in% names(which(table(ps.mixomics@sam_data$Subject_ID)!=1)), ps.mixomics)
+```
 
+# Multievel pca
+
+Run the multilevel pca. We do CLR transformation of the data prior to multi-level pca
+
+```{r multi-level pca, include=T}
 diverse.pca = pca(ps.mixomics@otu_table+1, ncomp = 10, logratio = 'CLR', multilevel = ps.mixomics@sam_data$Subject_ID)
+```
+
+plot screeplot
+
+```{r screeplot, include=T}
 plot(diverse.pca)
+```
 
-df <- as.data.frame(diverse.pca$loadings$X[,1:2])
-df <- cbind(df, ps@tax_table@.Data[rownames(df),])
-df$Abundance <- taxa_sums(ps.mixomics)[rownames(df)]
+# Plot pca
 
+```{r plot pca, include=T}
+time="Time_Point"
+var="Treatment"
+x="PC4"
+y="PC3"
+
+#build df
+df <- data.frame(row.names = rownames(diverse.pca$x),
+                 diverse.pca$x,
+                 ps.mixomics@sam_data[rownames(diverse.pca$x),])
+
+# include centroids
+df$PTV_TP <- paste0(df[,var],df[,time])
+centroids <- aggregate(diverse.pca$x~PTV_TP,data=df,mean)
+df <- merge(df,centroids,by="PTV_TP",suffixes=c("",".centroid"))
+
+# plot
+p.multi.pca <- ggplot(df, aes_string(x=x, y=y, color=var, shape=var)) +
+  geom_segment(aes_string(x=paste0(x,".centroid"), y=paste0(y,".centroid"), xend=x, yend=y), alpha=0.3, color="black") +
+  scale_color_viridis_d(option = "C", end = 0.75) +
+    theme_bw() +
+  labs(x=paste0(x,": ",round(diverse.pca$explained_variance[x], 3)*100, "% variance explained"),
+       y=paste0(y,": ",round(diverse.pca$explained_variance[y], 3)*100, "% variance explained"),
+       title="Multilevel PCA") +
+  facet_wrap(~Time_Point, scales="free") + 
+  geom_point(size=3) +
+  NULL; plot(p.multi.pca)
+```
+
+# Plot loadings
+
+We plot the loadings of the top 9 phyla on the first two components,
+
+```{r plot loadings, include=T, fig.width = 12, fig.height=6}
+PC1="PC1" # x
+PC2="PC2" # y
+Rank="Family" # color
+size="Abundance" # size
+
+# build df
+df <- as.data.frame(diverse.pca$loadings$X[,c(PC1,PC2)]) # loadings
+df <- cbind(df, ps@tax_table@.Data[rownames(df),]) # Include lineage
+df$Abundance <- taxa_sums(ps.mixomics)[rownames(df)] # Abundance
+
+# select top 9 phyla
 phyl_abun <- aggregate(df$Abundance, by=list(df$Phylum), FUN=sum)
 df <- df[df$Phylum %in% phyl_abun[order(phyl_abun[,2], decreasing = T)[1:9],1],]
 
-p <- ggplot(df, aes(x=PC1, y=PC2, color=Family,size=Abundance)) + 
+#plot
+p <- ggplot(df, aes_string(x=PC1, y=PC2, color=Rank,size=size)) + 
   theme_bw() + 
   geom_hline(yintercept = 0, color = "black", size = 1) +
   geom_vline(xintercept = 0, color = "black", size = 1) +
   geom_point() + facet_wrap(~Phylum); plot(p)
 ```
 
-
-
-
+This shows that a differential abundance of Actinobacteria and Bacteroidetes drive a significant of the variance. 

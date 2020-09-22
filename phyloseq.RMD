@@ -1,0 +1,125 @@
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+---
+title: "Microbiome data organization in phyloseq"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Organization
+
+In this tutorial I will shortly show how I handle and organize microbiome datasets.
+
+Microbiome studies usally comprise multiple datasets and it is usefull to store these datasets in a consistent way. A basic dataset comprises an ASV/OTU count table and sample/environmental data. Usually the data is complemented with a taxonomy table and phylogenetic tree of the ASVs. Within R, I find it usefull to store this data into a phyloseq object. The phyloseq package (https://joey711.github.io/phyloseq/) was written to store and analyse microbiome data and we will use it through out our tutorials
+
+# Load the required packages
+
+```{r environment, include=T, echo=T, message=F}
+library(phyloseq)
+library(ape)
+library(phytools)
+library(Biostrings)
+```
+
+# Read & wrangle data
+
+Lets start by loading the OTU table and sample data. The dataset that we use here are some of the control samples that we use during sequencing.
+
+```{r load otu data, include=T}
+counts <- read.csv("./Data_files/CONTROLE_LIBRARIES.otu_table.csv", check.names = F, row.names = 1)
+counts[1:5,1:5]
+```
+
+We can see that the rows represent ASV, and columns represent samples. R does not approve of names starting with numbers, and will add a "X" at the start of those names. To avoid this renaming we've disabled this feature of read.csv by setting the check.names flag to FALSE. Furthermore, by setting row.names=1, the first column of the file will be used to set the rownames of the dataframe. 
+
+Next we read in the sample data, (aka: metadata or environmental variables).
+
+```{r load sample data, include=T}
+meta <- read.csv("./Data_files/CONTROLE_LIBRARIES.sam_data.csv", check.names = F, row.names = 1)
+meta[1:5,1:5]
+```
+
+Here we see that rows represent samples and columns represent sample/environmental variables. 
+The following reads in the taxonomy data.
+
+```{r load taxonomy data, include=T}
+taxa <- read.csv("./Data_files/CONTROLE_LIBRARIES.tax_table.csv", check.names = F, row.names = 1)
+taxa[1:5,]
+colnames(taxa)
+```
+The taxonomy table holds the classification of each ASV according to the Linnaean classification system. In the taxonomy table each column is a taxonomic rank, with the lowest rank representing Species. Many times ASVs cannot be confidentialy be assigned to a taxonomic rank, in which case these taxonomic ranks are empty (NA). The reason these ASVs dont hold any taxonomy is either because the sequence is novel, and taxonomy has not be set or because annotation is ambigious, meaning the sequenc could belong to different clades.
+
+To read in the phylogentic tree we use the ape package.
+
+```{r load tree, include=T}
+tree <- ape::read.tree("./Data_files/CONTROLE_LIBRARIES.phy_tree.tree")
+tree
+```
+
+As we can see this tree holds 2384 tips, which represent unique ASV sequences. It is composed of 2371 internal nodes, which means the tree is not binary, meaning that each node can have more than two branches. Furthermore the tree is unrooted. This may cause issues during downstream analysis therefore we will modify it using apes midpoint root function. This assumes that the last common ancestor was in the middle of the longest possible path in the tree. This may not be very accurate, but is a decent aproximation.
+
+```{r mod tree, include=T}
+if (!ape::is.rooted(tree)){
+  tree <- phytools::midpoint.root(tree)
+}
+tree
+```
+
+Phyloseq can also hold sequence information of the ASVs. We usually dont use these in the statistical analysis but will include these for sake of completeness. In this case we use the Biostrings package to read the fasta file.
+
+```{r load seqs, include=T}
+seqs <- readDNAStringSet("./Data_files/CONTROLE_LIBRARIES.asv.fasta")
+seqs
+```
+
+# Building phyloseq object
+
+We will build our initial phyloseq object using just the asv table and sample meta data.
+We do this by calling the function phyloseq and storing the object as ps.
+
+```{r build ps, include=T}
+ps <- phyloseq(otu_table(counts, taxa_are_rows=T), sample_data(meta))
+ps
+```
+
+We now have a phyloseq object which holds our count table and sample data. We can see the data has 2384 ASVs, 182 samples and 109 environmental variables.
+
+We will now append the phyloseq object with taxonomy, tree and sequences 
+
+```{r complete ps}
+phy_tree(ps) <- phy_tree(tree)
+ps@refseq <- seqs
+tax_table(ps) <- tax_table(as.matrix(taxa))
+ps
+```
+
+Now we have build or phyloseq object. We will store it in RDS format for later use.
+
+```{r store RDS}
+saveRDS(ps, "./Data_files/ps.CONTROLE_LIBRARIES.RDS")
+```
+ 
+# Disclaimers Notes to self and 2dos
+
+Of course this code was tested and proven to work however (an error in the code would even prevent me from publishing this as html). If you 
+tax_table requires the the taxa object to be a matrix rather than a data.frame. (Try and remove the as.matrix)
+
+####
+
+ASV=Amplicon Sequence Variant; True sequence variants; which is at least unique on 1 amplicon position; meaning ASVs can differ on just 1 nuclotide.
+OTU=Operational Taxonomic Unit; A cluster of similar sequences with a preset similarity cut-off
+
+# Environment details
+
+```{r close RDS}
+sessionInfo()
+```

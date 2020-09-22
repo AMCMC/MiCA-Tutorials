@@ -1,5 +1,5 @@
 ---
-title: "index"
+title: "MiCA Microbiome Analysis Tutorials"
 output: html_document
 ---
 
@@ -7,7 +7,26 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Under construction!!!!
+
+These pages will show tutorials for microbiome data analysis as peformed by MiCA.
+
+[Data Structure and organization](https://amcmc.github.io/MiCA-Tutorials/phyloseq.html)
+
 List of tutorials:
 
+Alpha Diveristy
+Cross-sectional:
+Repeated:
+
+Beta Diversity
+Ordination (PCoA)
+Testing (adonis)
 Multilevel
-https://amcmc.github.io/MiCA-Tutorials/multilevel.html
+Differential abundance:
+
+[Multilevel](https://amcmc.github.io/MiCA-Tutorials/multilevel.html)
+
+Philr:
+XGBoost:
+heatmap:
