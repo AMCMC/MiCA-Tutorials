@@ -27,6 +27,8 @@ Differential abundance:
 
 [Multilevel](https://amcmc.github.io/MiCA-Tutorials/multilevel.html)
 
+[Nested Design Adonis](https://amcmc.github.io/MiCA-Tutorials/adonis_repeated_measures.html)
+
 Philr:
 XGBoost:
 heatmap:

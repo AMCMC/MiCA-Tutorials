@@ -1,0 +1,110 @@
+<style type="text/css">
+.main-container {
+max-width: 1800px;
+margin-left: auto;
+margin-right: auto;
+}
+</style>
+
+---
+title: "Paired data analysis adonis"
+output: html_document
+author: M.Davids
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+"Work in progress"
+
+When dealing with longitudinal microbiome data, the subject confounding patters do not allow for regular adonis significance testing.
+With a well designed permatution matrix it can still be used.
+
+Data used is from RED study (https://www.sciencedirect.com/science/article/abs/pii/S1262363619301855).
+
+# Install and load required packages
+
+```{r environment, include=T, message=F, warning=F}
+cran <- c("ggplot2",
+          "ggpubr",
+          "vegan",
+          "permute",
+          NULL)
+install.packages(cran[!cran %in% installed.packages()])
+
+bioc. <- c("phyloseq",
+           "mixOmics",
+           NULL)
+BiocManager::install(bioc.[!bioc. %in% installed.packages()], update = F)
+
+library(phyloseq)
+library(mixOmics)
+library(ggplot2)
+library(ggpubr)
+library(permute)
+library(vegan)
+```
+
+# Read & wrangle data
+
+```{r data, include=T, message=F, warning=F}
+ps <- readRDS(url("https://github.com/AMCMC/MiCA-Tutorials/raw/master/Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS"))
+ps@sam_data$Treatment <- ps@sam_data$Randomization
+```
+
+Normalize the data by rarefaction without replacement.
+
+```{r rarefy, include=T, warning=F, echo=T, message=F}
+ps.rare<- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122, replace = F)
+```
+
+Only use subjects which have at least 2 time points. 
+
+```{r subset, include=T}
+ps.paired <- prune_samples(ps.rare@sam_data$Subject_ID %in%  names(which(table(ps.rare@sam_data$Subject_ID)!=1)), ps.rare)
+table(ps.paired@sam_data$Treatment, ps.paired@sam_data$Time_Point)
+```
+
+The dataset contains 24 subjects that received DAPA, and 17 that recieved GLIC.
+
+# Different adonis permutation models
+
+Incorrect model with subject confounding
+
+```{r}
+dist <- distance(ps.paired, "bray")
+df <- data.frame(ps.paired@sam_data)
+perm <- how(nperm = 999)
+adonis2 (dist ~ Treatment, permutations = perm, data = df)
+```
+
+According to this test, treatment allocation is significantly associated with the microbiome.
+This is misleading as subjects is confounded in the design.
+A possible solution is to test the treatment time interaction.
+
+```{r}
+adonis2 (dist ~ Treatment*Time_Point, permutations = perm, data = df)
+```
+
+Here we see that overall the two treatment arms are different, independent of time, indicative of the (subject) bias. But are the two groups truely different?
+
+With the following perumtation design we can permute the time label within a subject and the treatment among the subjects (the correct design)
+
+```{r}
+perm.strata <- how(within = Within(type = "series", mirror = TRUE),
+          plots = Plots(strata = df$Subject_ID, type = "series"),
+          blocks = df$Treatment)
+
+adonis2(dist ~ Treatment*Time_Point, permutations = perm.strata, data=df)
+```
+Since we now permuted time within a subject and treatment among subjects, we no longer have the subject confounding the design in the permanova testing and we see that the two groups are acually not significantly different.
+
+In conclusion we show there is no significant effect of the two diabetic drugs on the beta-diversity, in terms of bray-curtis dissimilarity, in time, nor is there an allocation or time effect!
+
+```{r}
+sessionInfo()
+````
