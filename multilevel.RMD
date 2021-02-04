@@ -19,6 +19,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
+"Work in progress"
+
 The following code shows an example for a multilevel-pca analysis.
 Multilevel pca focusses on within-subject variance rather than interindividual.
 It is primarily used for visualization.
@@ -30,14 +32,26 @@ Data used is from RED study (https://www.sciencedirect.com/science/article/abs/p
 # Install and load required packages
 
 ```{r environment, include=T, message=F, warning=F}
+cran <- c("ggplot2",
+          "ggpubr",
+          NULL)
+install.packages(cran[!cran %in% installed.packages()])
+
+bioc. <- c("phyloseq",
+           "mixOmics",
+           NULL)
+BiocManager::install(bioc.[!bioc. %in% installed.packages()])
+
 library(phyloseq)
 library(mixOmics)
+library(ggplot2)
+library(ggpubr)
 ```
 
 # Read & wrangle data
 
 ```{r data, include=T, message=F, warning=F}
-ps <- readRDS("Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS")
+ps <- readRDS(url("https://github.com/AMCMC/MiCA-Tutorials/raw/master/Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS"))
 ps@sam_data$Treatment <- ps@sam_data$Randomization
 ```
 
@@ -151,8 +165,8 @@ true
 
 Since the data is paired, I permute the time label within a subject and the treatment allocation among subjects. 
 
-# Disclaimer: There are probably more elegant ways to code this but attempts with various packages failed and therefor I wrote this instead; Suggestions welcome
-# I think its better to test significance using adonis using a similar permutation scheme
+*!Disclaimer: There are probably more elegant ways to code this but attempts with various packages failed and therefor I wrote this instead; Suggestions welcome
+*I think its better to test significance using adonis using a similar permutation scheme
 
 ```{r, include=T, fig.width = 12, fig.height=6}
 permutations=999
@@ -192,3 +206,7 @@ p <- ggplot(df.pmmo.long, aes(x=value)) + geom_density() + facet_wrap(~variable,
 ```
 
 This shows no significant results from the manova on the first 10 components.
+
+```{r}
+sessionInfo()
+````
