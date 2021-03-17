@@ -54,6 +54,8 @@ library(vegan)
 ```{r data, include=T, message=F, warning=F}
 ps <- readRDS(url("https://github.com/AMCMC/MiCA-Tutorials/raw/master/Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS"))
 ps@sam_data$Treatment <- ps@sam_data$Randomization
+
+ps <- phyloseq(otu_table(ps@otu_table@.Data[order(ps@sam_data$Subject_ID, ps@sam_data$Time_Point),], taxa_are_rows = F), tax_table(ps), sample_data(ps), ps@phy_tree)
 ```
 
 Normalize the data by rarefaction without replacement.
@@ -75,8 +77,14 @@ The dataset contains 24 subjects that received DAPA, and 17 that recieved GLIC.
 
 Incorrect model with subject confounding
 
+(Lets reorder the df such that all paired samples are together.)
+
 ```{r}
+set.seed((1))
 dist <- distance(ps.paired, "bray")
+#dist <- distance(ps.paired, "wunifrac")
+#dist <- distance(microbiome::transform(ps.paired, "clr"), method = "euclidean")
+
 df <- data.frame(ps.paired@sam_data)
 perm <- how(nperm = 999)
 adonis2 (dist ~ Treatment, permutations = perm, data = df)
@@ -87,23 +95,37 @@ This is misleading as subjects is confounded in the design.
 A possible solution is to test the treatment time interaction.
 
 ```{r}
+set.seed((1))
 adonis2 (dist ~ Treatment*Time_Point, permutations = perm, data = df)
 ```
 
-Here we see that overall the two treatment arms are different, independent of time, indicative of the (subject) bias. But are the two groups truely different?
+Here we see that overall the two treatment arms are different, independent of time, indicative of the (subject) bias. But are the two groups truly different?
 
-With the following perumtation design we can permute the time label within a subject and the treatment among the subjects (the correct design)
+With the following permutation design we can permute the time label within a subject and the treatment among the subjects (the correct design).
+
+Lets have a look at the permutation matrix. 
 
 ```{r}
-perm.strata <- how(within = Within(type = "series", mirror = TRUE),
-          plots = Plots(strata = df$Subject_ID, type = "series"),
-          blocks = df$Treatment)
+perm.strata <- how(plots = Plots(strata = df$Subject_ID, type = "free"))
+set.seed(3)
+perm <- shuffleSet(n=sample_names(ps.paired), control = perm.strata, nset = 3)
+perm[,1:2]
 
+df[1:2,c("Subject_ID","Treatment","Time_Point")]
+droplevels(df$Subject_ID[t(perm[,1:2])])
+droplevels(df$Treatment[t(perm[,1:2])])
+droplevels(df$Time_Point[t(perm[,1:2])])
+```
+
+As you can see the samples are permuted in pairs, and the order of the pairs is shuffled.
+
+```{r}
 adonis2(dist ~ Treatment*Time_Point, permutations = perm.strata, data=df)
 ```
-Since we now permuted time within a subject and treatment among subjects, we no longer have the subject confounding the design in the permanova testing and we see that the two groups are acually not significantly different.
 
-In conclusion we show there is no significant effect of the two diabetic drugs on the beta-diversity, in terms of bray-curtis dissimilarity, in time, nor is there an allocation or time effect!
+Since we now permuted time within a subject and treatment among subjects, we no longer have the subject confounding the design and we see that the two groups are actually not significantly different.
+
+In conclusion we show there is no significant effect of the two diabetic drugs on the beta-diversity, in terms of Bray-Curtis dissimilarity, nor is there an allocation or time effect!
 
 ```{r}
 sessionInfo()
