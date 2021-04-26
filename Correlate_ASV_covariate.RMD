@@ -1,0 +1,185 @@
+---
+title: "Covariates - taxa correlation analysis"
+output:
+  html_document:
+    toc: true # table of content true
+    toc_depth: 2  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+author: "M. Davids"
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r setup rmd, include=FALSE}
+# setting global options for the rmd markdown
+knitr::opts_chunk$set(echo = T) # include chunck code
+knitr::opts_chunk$set(cache = F) # use chuck results from cache if not modified (speed)
+# knitr::opts_chunk$set(warning = F) # suppress warnings
+# knitr::opts_chunk$set(comment = F) # suppress comments
+knitr::opts_chunk$set(message = F) # suppress messages
+```
+
+# Covariate correlation analysis.
+
+If we have continuous covariates that we want to link to specific taxa we can perform correlation analysis.
+Here is some exemplary code. 
+
+The data used is a subset from our positive control samples. The covariate of interest in this case is the amplicon yield from the PCR, which is known to introduce significant compositional bias. Certain amplicons amplify easier than others. In this case all samples have been amplied using the same PCR protocol and thus PCR bias should have been reduced to a minimum though still variation remains. 
+
+# Load the required packages
+
+```{r environment, include=T, echo=T, message=F, cache=F}
+library(phyloseq)
+library(ggplot2)
+library(DT)
+library(ggpmisc)
+# library(Biostrings)
+```
+
+# Read & wrangle data
+
+Lets start by loading the OTU table and sample data. 
+
+```{r, include=T, echo=T}
+ps <- readRDS("Data_files/ps.CONTROLE_LIBRARIES.RDS")
+```
+
+```{r, include=T, echo=FALSE, warning=F, message=F}
+ps <- prune_samples(ps@sam_data$Ext_ID=="MOCK_4", ps)
+ps <- prune_samples(ps@sam_data$PCR_Cond=="initial_denaturation:98_0,5;denaturation:98_0,167;annealing:55_0,334;elongation:72_1,5;final_elongation:72_10;total_cycles:25", ps)
+ps <- rarefy_even_depth(ps, sample.size = 15000, rngseed = 211202, replace = F, trimOTUs = T)
+ps <- transform_sample_counts(ps, function(x) x/sum(x))
+ps@sam_data$Nucl_Acid_AMP_Conc <- as.numeric(gsub(",",".",as.character(ps@sam_data$Nucl_Acid_AMP_Conc)))
+```
+
+```{r}
+ps
+```
+
+As we can see the dataset hold `r nsamples(ps)` samples and is composed of `r ntaxa(ps)` unique taxa. These contain many spurious and low abudant ASVs which will not give any significant associations and only contribute to the multiple testing burden. Lets only take the top 100 ASV. (This is an arbitrairy cutoff)
+
+```{r}
+top100 <- names(sort(taxa_sums(ps), decreasing = T)[1:100])
+ps.sub <- prune_taxa(top100, ps)
+ps.sub
+```
+
+First we check the orientation of the ASV table. I prefer to have the ASV as columns rather than rows.
+
+```{r}
+taxa_are_rows(ps.sub)
+if(taxa_are_rows(ps.sub)) otu_table(ps.sub) <- otu_table(t(ps.sub@otu_table), taxa_are_rows = F)
+taxa_are_rows(ps.sub)
+```
+
+# Analysis
+
+It is best to use spearman correlation rather than pearson, as pearson is prone to overfit on outliers.
+
+## Single correlation
+
+Lets have a look at the correlation of the most abundant ASV
+
+```{r}
+ASV <- top100[1]
+asvcor <- cor.test(ps.sub@sam_data$Nucl_Acid_AMP_Conc, ps.sub@otu_table[,ASV], method = "spearman"); asvcor
+plot(ps.sub@sam_data$Nucl_Acid_AMP_Conc,ps.sub@otu_table[,ASV], )
+```
+
+We see be a positive (rho=`r asvcor$estimate`) significant (p.value=`r asvcor$p.value`) association between the ASV and amplicon yield. 
+
+## Multiple correlations
+
+Lets use lapply to test all taxa in our subsetted phyloseq object.
+
+```{r}
+asvcor <- lapply(taxa_names(ps.sub), function(x) cor.test(ps.sub@sam_data$Nucl_Acid_AMP_Conc, method = "spearman",ps.sub@otu_table[,x], exact = F))
+```
+
+Lets extract the relevant statistics and merge these into a data frame. 
+
+```{r}
+df <- data.frame(row.names=taxa_names(ps.sub),
+                 rho=unname(unlist(lapply(asvcor, function(x) x$estimate))),
+                 p.value=unlist(lapply(asvcor, function(x) x$p.value)))
+```
+
+## p.adjust
+
+Since we did 100 test we need to correct for multiple testing. Lets use BH correction to obtain the corrected p.values.
+
+```{r}
+df$p.adj <- p.adjust(df$p.value, method = "BH")
+```
+
+## Table results
+
+Since the ASVs are arbitrary labels lets include the taxonomy in the final table. 
+
+```{r}
+df <- cbind(df, ps.sub@tax_table[rownames(df),])[order(df$p.value),]
+DT::datatable(df)
+```
+
+## Visualize correlations
+
+It is good practice to visualize the results. Lets view the four significant ASVs using ggplot.
+To build the dataframe we can use `psmelt` function.
+
+```{r}
+taxa <- rownames(df)[order(df$p.value)[1:4]]
+psm <- psmelt(prune_taxa(taxa, ps))
+psm$OTU <- factor(psm$OTU, levels=taxa)
+
+ggplot(psm, aes(y=Nucl_Acid_AMP_Conc, x=Abundance)) + 
+  theme_bw() + 
+  geom_point() + 
+  facet_wrap(~OTU*Genus, scales="free_x") +
+  geom_smooth(method = "lm") + 
+  stat_poly_eq(formula = x ~ y, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +  
+  NULL
+```
+
+We see that some of the taxa abundances are heavily biased by the amplicon yield, and relative abundance can change an order of magnitude. Unfortunately we do not know the causal factor for the variable amplicon yield and thus we cannot control for it. Therefor it is important to reduce the amount of batches in a study, and be extremely careful not have these possible factors confound the design!
+
+# Summary function
+
+A summary function would look like
+
+```{r}
+covar_cor <- function(ps, taxa, covariate, p.adjust="BH"){
+  # sum(is.na(get(covariate,ps@sam_data))) # check missing
+  # class(get(covariate,ps@sam_data))=="numeric" # check numeric
+  ps <- prune_taxa(taxa, ps)
+  if(taxa_are_rows(ps)) otu_table(ps) <- otu_table(t(ps@otu_table), taxa_are_rows = F)
+  asvcor <- lapply(taxa_names(ps), function(x) cor.test(get(covariate,ps@sam_data), method = "spearman",ps@otu_table[,x], exact = F))
+  df <- data.frame(row.names=taxa_names(ps),
+                 rho=unname(unlist(lapply(asvcor, function(x) x$estimate))),
+                 p.value=unlist(lapply(asvcor, function(x) x$p.value)))
+  df$p.adjust <- p.adjust(df$p.value, method = p.adjust)
+  return (df)
+}
+```
+
+## summary function example
+
+```{r}
+df.example <- covar_cor(ps = ps, taxa = top100, covariate = "Nucl_Acid_AMP_Conc", p.adjust = "BH")
+head(df.example)
+```
+
+# Environment details
+
+```{r close RDS}
+sessionInfo()
+```

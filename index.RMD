@@ -7,28 +7,45 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Under construction!!!!
+Under construction!!!! Provisional code
 
-These pages will show tutorials for microbiome data analysis as peformed by MiCA.
+These pages will show tutorials for microbiome data analysis as peformed by [MiCA](http://microbiotacenter.nl/).
+
+Many of these analysis are heavily dependent on the hypothesis in question and experimental design. 
+This repo should serve as basic library of tutorials for microbiome analysis. 
+
+## Data wrangling and data viz
 
 [Data Structure and organization](https://amcmc.github.io/MiCA-Tutorials/phyloseq.html)
 
-List of tutorials:
+[phyloseq to ggplot]
 
-Alpha Diveristy
-Cross-sectional:
-Repeated:
+[ASV boxplots]
 
-Beta Diversity
-Ordination (PCoA)
-Testing (adonis)
-Multilevel
-Differential abundance:
+## Alpha Diveristy
 
-[Multilevel](https://amcmc.github.io/MiCA-Tutorials/multilevel.html)
+  Cross-sectional
 
-[Nested Design Adonis](https://amcmc.github.io/MiCA-Tutorials/adonis_repeated_measures.html)
+  Repeated
 
-Philr:
-XGBoost:
-heatmap:
+## Beta Diversity
+
+  Ordination (PCoA)
+
+  Significance testing (adonis)
+
+  [Multilevel](https://amcmc.github.io/MiCA-Tutorials/multilevel.html)
+
+  [Nested Design Adonis](https://amcmc.github.io/MiCA-Tutorials/adonis_repeated_measures.html)
+
+  [Philr]
+
+## Taxa analysis
+
+  [Differential abundance]
+  
+  [Covariate analysis](https://amcmc.github.io/MiCA-Tutorials/Correlate_ASV_covariate.html)
+
+  [XGBoost]
+  
+  [Extremly randomized forrest]
