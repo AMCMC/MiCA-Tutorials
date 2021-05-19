@@ -1,0 +1,238 @@
+<style type="text/css">
+.main-container {
+max-width: 1800px;
+margin-left: auto;
+margin-right: auto;
+}
+</style>
+
+---
+title: "Multi-level pca analysis"
+output: html_document
+author: M.Davids
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Multi-level PCA (mPCA) can be used to visualize longitudinal data were we want to remove the inter-individual variance, which can obscure possible treatment effects. The following code shows an example on a toy dataset. Once we understand how the data is tranformed, we can more easily understand the multi-level pca.
+
+An alternative approach would be to use RDA. # add tutorial
+
+# Install and load required packages
+
+```{r environment, include=T, message=F, warning=F}
+#renv::init()
+
+cran <- c("ggplot2",
+          "ggpubr",
+          "ape",
+          "ggfortify",
+          NULL)
+
+install.packages(cran[!cran %in% installed.packages()])
+
+bioc. <- c("phyloseq",
+           "mixOmics",
+           NULL)
+#BiocManager::install(bioc.[!bioc. %in% installed.packages()])
+
+library(phyloseq)
+library(mixOmics)
+library(ggplot2)
+library(ggpubr)
+library(ggfortify)
+```
+
+# Toy data
+
+Lets create a toy data set with 8 subjects and 16 features and two time points.
+
+First we generate the baseline data. There is no confounding factor and all measurements are independent from the same distribution.
+
+```{r}
+nsample=8
+nfeatures=16
+
+set.seed(1);toy_data <- matrix(data = sample(x = 1:10, size = nsample*nfeatures, replace = T), nrow = nsample, ncol = nfeatures, dimnames = list(paste0("s",1:nsample,"_t1"),paste0("f",1:nfeatures)))
+
+toy_data
+```
+
+Now lets generate the second time point data, which is completely independent of the baseline.
+
+```{r}
+set.seed(2);toy_data2 <- matrix(data = sample(x = 1:10, size = nsample*nfeatures, replace = T), nrow = nsample, ncol = nfeatures, dimnames = list(paste0("s",1:nsample,"_t2"),paste0("f",1:nfeatures)))
+
+toy_data_merged <- rbind(toy_data, toy_data2)
+toy_data_merged
+```
+
+Lets add a design
+
+```{r}
+toy_data_design <- data.frame(row.names = rownames(toy_data_merged),
+                              treatment=factor(rep(c(rep(1,4),rep(2,4)),2)),
+                              time_point=factor(c(rep(1,8),rep(2,8))),
+                              subject=gsub("_.*","",rownames(toy_data_merged)))
+toy_data_design
+```
+
+We can visualize using simple pca.
+
+```{r}
+pca_out <- prcomp(toy_data_merged)
+autoplot(pca_out, data = toy_data_design, colour="treatment", shape="time_point") + 
+  theme_bw() +
+  geom_line(aes(group=subject)) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+As you can see all data is scattered and no obvious patterns, as it should
+Now use mPCA to visualize the results.
+
+```{r}
+mpca <- pca(X = toy_data_merged, multilevel = toy_data_design$subject, ncomp = 10)
+
+df <- cbind(mpca$variates, toy_data_design)
+
+ggplot(df, aes(x=X.PC1, y=X.PC2)) +
+  theme_bw() + 
+  geom_point(aes(color=treatment, shape=time_point)) +
+  geom_line(aes(group=subject), alpha=0.3) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+Also in this plot we dont see any patterns.
+
+# Subject variance
+
+Now lets make the second timepoint dependent on the first measurement and add some random noise by either substracting or adding one count, or not changing at all.
+
+```{r data, include=T, message=T, warning=F}
+set.seed(2);toy_data2 <- toy_data-sample(c(-1,0,1), size = nsample*nfeatures, replace = T)
+
+toy_data_merged <- rbind(toy_data, toy_data2)
+toy_data_merged
+```
+
+```{r}
+pca_out <- prcomp(toy_data_merged)
+autoplot(pca_out, data = toy_data_design, colour="treatment", shape="time_point") + 
+  theme_bw() +
+  geom_line(aes(group=subject)) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+Now we can see a clearly see all the inter-individual variance.
+We can correct for all subject specific variance using mPCA.
+
+```{r}
+mpca <- pca(X = toy_data_merged, multilevel = toy_data_design$subject, ncomp = 10)
+
+df <- cbind(mpca$variates, toy_data_design)
+
+ggplot(df, aes(x=X.PC1, y=X.PC2)) +
+  theme_bw() + 
+  geom_point(aes(color=treatment, shape=time_point)) +
+  geom_line(aes(group=subject), alpha=0.3) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+Now all interindivual subject variance has been removed from the ordination.
+And no treatment or time effect can be observed.
+
+Lets have a look at the transformed data that the mixOmics package generated.
+
+```{r}
+mpca$X
+```
+
+We either added or substracted 1 from the count table. As we can see this difference is averaged over the two time points. So effectively we are doing a pca on the deltas. This is the reason the plot is symmetrical. 
+
+# Time effect
+
+Now lets add some time effect by either adding or substracting.
+
+```{r}
+set.seed(3);toy_data3 <- toy_data2+matrix(rep(sample(c(-1,0,0,0,1), size = nfeatures, replace = T), nsample), ncol = nfeatures, byrow = T)
+
+toy_data_merged <- rbind(toy_data, toy_data3)
+toy_data_merged
+```
+
+```{r}
+pca_out <- prcomp(toy_data_merged)
+autoplot(pca_out, data = toy_data_design, colour="treatment", shape="time_point") + 
+  theme_bw() +
+  geom_line(aes(group=subject)) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+The interindividual differences are this the major source of variance and a small time effect can be observed (PC2).
+
+```{r}
+mpca <- pca(X = toy_data_merged, multilevel = toy_data_design$subject, ncomp = 10)
+
+df <- cbind(mpca$variates, toy_data_design)
+
+ggplot(df, aes(x=X.PC1, y=X.PC2)) +
+  theme_bw() + 
+  geom_point(aes(color=treatment, shape=time_point)) +
+  geom_line(aes(group=subject), alpha=0.3) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+With the multilevel pca, time effect is very obvious.
+
+# Treatment 
+
+Now lets add treatment effect.
+
+```{r}
+set.seed(3);effect <- matrix(rep(sample(c(-1,0,1), size = nfeatures, replace = T), nsample), ncol = nfeatures, byrow = T)*2
+effect[1:4,] <- 0
+
+toy_data4 <- toy_data3+effect
+
+toy_data_merged <- rbind(toy_data, toy_data4)
+toy_data_merged
+```
+
+
+```{r}
+pca_out <- prcomp(toy_data_merged)
+autoplot(pca_out, data = toy_data_design, colour="treatment", shape="time_point") + 
+  theme_bw() +
+  geom_line(aes(group=subject)) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+There is no obvious treatment effect in the regular pca
+
+```{r}
+mpca <- pca(X = toy_data_merged, multilevel = toy_data_design$subject, ncomp = 10)
+
+df <- cbind(mpca$variates, toy_data_design)
+
+ggplot(df, aes(x=X.PC1, y=X.PC2)) +
+  theme_bw() + 
+  geom_point(aes(color=treatment, shape=time_point)) +
+  geom_line(aes(group=subject), alpha=0.3) +
+  stat_ellipse(aes(group=interaction(treatment, time_point)))
+```
+
+Now we can see an obvious effect of time and treatment.
+
+# Summary
+
+This is of course an exaggerated example, but it shows how inter-individual variance can obscure treatment effects. Especially in microbiome data, inter-individual variance is usally largerer than treatment effects.
+
+
+```{r}
+sessionInfo()
+````
