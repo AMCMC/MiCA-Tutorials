@@ -32,7 +32,7 @@ knitr::opts_chunk$set(message = F) # suppress messages
 One of the most debated procedures in microbiome data analysis is how we normalize the data. Especially the application of rarefaction to correct for differences in sequencing depth has been [controversial](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003531). Most arguments against it are from the perspective of data loss and subsequent unnecessary type 2 errors. While I agree that data is lost and type 2 errors might be more frequent, it does require other approaches to account for possible bias due to sampling efforts. 
 
 CLR-transformation has been proposed to counter the issue of differences in sequencing depth. CLR transformation of a vector is done by computing log(x) - mean(log(x)).
-Since the basis of the transformation is based on taking (natural) log, zeros in the data need to be adjusted with a pseudo count.
+Since transformation is based on taking (natural) log, zeros in the data need to be adjusted with a pseudo count.
 
 The following analysis shows how a potential bias in sequencing depth will persist upon CLR-transformation.
 
@@ -110,7 +110,7 @@ plot_ordination(ps.merged.clr, ord, label="Sample", color="Seq_Depth") +
 
 # The issue
 
-I think the main problem is that sequence depth gets encoded, especially into the zero counts. Since microbiome data is very sparse and many features are zeros sequence depth gets encoded into the distance matrix. This issue would also be observed for individual taxa. Thus CLR-transformation does not address any sampling depth bias when testing for differences in microbiome composition or differential taxa abundance. 
+I think the main problem is that sequence depth gets encoded, especially into the zero counts. Since microbiome data is very sparse and many features are zeros, sequence depth gets encoded into the distance matrix. This issue would also be observed for individual taxa. Thus CLR-transformation does not address any sampling depth bias when testing for differences in microbiome composition or differential taxa abundance. 
 
 The following figure shows how sequencing depth gets encoded in the zero count features.
 

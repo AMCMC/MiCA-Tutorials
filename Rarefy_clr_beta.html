@@ -391,9 +391,9 @@ and type 2 errors might be more frequent, it does require other
 approaches to account for possible bias due to sampling efforts.</p>
 <p>CLR-transformation has been proposed to counter the issue of
 differences in sequencing depth. CLR transformation of a vector is done
-by computing log(x) - mean(log(x)). Since the basis of the
-transformation is based on taking (natural) log, zeros in the data need
-to be adjusted with a pseudo count.</p>
+by computing log(x) - mean(log(x)). Since transformation is based on
+taking (natural) log, zeros in the data need to be adjusted with a
+pseudo count.</p>
 <p>The following analysis shows how a potential bias in sequencing depth
 will persist upon CLR-transformation.</p>
 </div>
@@ -487,7 +487,7 @@ plot_ordination(ps.merged.clr, ord, label=&quot;Sample&quot;, color=&quot;Seq_De
 <h1><span class="header-section-number">4</span> The issue</h1>
 <p>I think the main problem is that sequence depth gets encoded,
 especially into the zero counts. Since microbiome data is very sparse
-and many features are zeros sequence depth gets encoded into the
+and many features are zeros, sequence depth gets encoded into the
 distance matrix. This issue would also be observed for individual taxa.
 Thus CLR-transformation does not address any sampling depth bias when
 testing for differences in microbiome composition or differential taxa
