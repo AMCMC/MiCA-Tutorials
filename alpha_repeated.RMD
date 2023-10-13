@@ -1,0 +1,75 @@
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+---
+title: "Procrustes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(lmerTest)
+library(ggplot2)
+
+```
+
+# Testing alpha divetrsity with repeated measures
+
+```{r data, include=T, message=F, warning=F}
+ps <- readRDS(url("https://github.com/AMCMC/MiCA-Tutorials/raw/master/Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS"))
+ps@sam_data$Treatment <- ps@sam_data$Randomization
+```
+
+Normalize the data by rarefaction without replacement.
+
+```{r rarefy, include=T, warning=F, echo=T, message=F}
+ps.alpa <- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122, replace = F)
+```
+
+## Prepare dataframe
+
+```{r}
+df <- estimate_richness(ps.alpa)
+df <- cbind(df, ps.alpa@sam_data)
+```
+
+## Visualize 
+
+```{r}
+library(gghalves)
+
+ggplot(df, aes(x=Time_Point, y=Shannon, group=(interaction(Treatment,Time_Point)), color=Treatment)) +
+  #gghalves::geom_half_violin() +
+  gghalves::geom_half_point() + 
+  gghalves::geom_half_boxplot()
+  #geom_boxplot() + 
+  #facet_wrap(~G_Sex) + 
+  #geom_line(aes(group=Subject_ID)) + 
+  NULL
+
+
+```
+
+## Test
+
+```{r}
+lmer(Shannon~Treatment*Time_Point + (1|Subject_ID), df)
+summary(lmer(Shannon~Treatment*Time_Point*G_Sex + (1|Subject_ID), df))
+```
+
+## Summary
+
+
+# Environment details
+
+```{r close RDS}
+sessionInfo()
+```

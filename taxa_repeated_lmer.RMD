@@ -1,0 +1,116 @@
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+---
+title: "Testing differential taxa abundance for repeated measures"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(lmerTest)
+library(ggplot2)
+library(phyloseq)
+
+```
+
+# Testing alpha divetrsity with repeated measures
+
+```{r data, include=T, message=F, warning=F}
+ps <- readRDS(url("https://github.com/AMCMC/MiCA-Tutorials/raw/master/Data_files/ps.2018_27_RED_study.2019-03-04.filtered.RDS"))
+ps@sam_data$Treatment <- ps@sam_data$Randomization
+```
+
+Normalize the data by rarefaction without replacement.
+
+```{r rarefy, include=T, warning=F, echo=T, message=F}
+ps.rare <- rarefy_even_depth(ps, sample.size = 25000, rngseed = 21122, replace = F)
+```
+
+# Taxa
+
+## Testing
+
+```{r}
+ps.rare.genus <- microbiome::aggregate_taxa(x = ps.rare, level = "Genus")
+
+
+taxa <- taxa_names(ps.rare.genus)
+lmer_taxa_ps <- function(taxa, ps){
+  psm <- psmelt(prune_taxa(taxa, ps))
+  fit <- lmer(Abundance ~ Treatment*Time_Point + (1 | Subject_ID), psm)
+  return(fit)
+}
+
+all.fit <- lapply(taxa, function(x) lmer_taxa_ps(x, ps.rare.genus))
+names(all.fit) <- taxa
+
+summary(all.fit[[1]])
+
+df <- data.frame(taxa=taxa, mean_abundance=(taxa_sums(ps.rare.genus)/sum(taxa_sums(ps.rare.genus)))[taxa], 
+                 ps.rare.genus@tax_table[taxa,],
+           Estimate.Treatment=unlist(lapply(taxa, function(x) coefficients(summary(all.fit[[x]]))["TreatmentGLIC","Estimate"])),
+           Estimate.TimePoint=unlist(lapply(taxa, function(x) coefficients(summary(all.fit[[x]]))["Time_Point1","Estimate"])),
+           Estimate.Treatment.TimePoint=unlist(lapply(taxa, function(x) coefficients(summary(all.fit[[x]]))["TreatmentGLIC:Time_Point1","Estimate"])),
+           Pvalue.Treatment=unlist(lapply(taxa, function(x) coefficients(summary(all.fit[[x]]))["TreatmentGLIC","Pr(>|t|)"])),
+           Pvalue.TimePoint=unlist(lapply(taxa, function(x) coefficients(summary(all.fit[[x]]))["Time_Point1","Pr(>|t|)"])),
+           Pvalue.Treatment.TimePoint=unlist(lapply(taxa, function(x) coefficients(summary(all.fit[[x]]))["TreatmentGLIC:Time_Point1","Pr(>|t|)"]))
+)
+
+#rio::export(df, "LME_model_results.xlsx")
+```
+
+## Visualize Volcanoplot
+
+```{r}
+ggplot(df, aes(x=Estimate.Treatment.TimePoint, y=-log(Pvalue.Treatment.TimePoint), color=Phylum)) + 
+  geom_point()
+```
+
+
+```{r}
+library(ggh4x)
+
+taxa2 <- taxa[1:25]
+boxplot_repeated_measures <- function(ps, taxa, Time_Point="Time_Point", Group=NULL, Subject_ID="Subject_ID", beeswarm=T, transform=T, log=T, mark_subjects=F, ncol=NULL, pseudocount=T){
+  if (is.null(ncol)){ncol <- ceiling(sqrt(length(taxa)))}
+  if (transform){ps <- transform_sample_counts(ps, function(x) x/sum(x))}
+  psm <- psmelt(prune_taxa(taxa, ps))
+  if (pseudocount){psm$Abundance + min(psm$Abundance[psm$Abundance!=0])/2}
+  psm$OTU <- factor(psm$OTU, levels=taxa) # keep order of taxa
+  #p <- ggplot(psm, aes_string(x=paste0("interaction(",Time_Point,",",Group,")"), y="Abundance", group=paste0("interaction(",Time_Point,",",Group,")"))) + 
+      p <- ggplot(psm, aes_string(x=Time_Point, y="Abundance", group=paste0("interaction(",Time_Point,",",Group,")"), color=Group)) + 
+    #facet_nested_wrap(formula(paste0("~OTU + ",Group), ), scales="free", ncol=ncol*2) + 
+    facet_wrap(~OTU, ncol=ncol) + 
+    geom_boxplot() +
+    NULL
+  if (log)  p <- p + scale_y_log10()
+  if (beeswarm) p <- p + ggbeeswarm::geom_beeswarm()
+  if (mark_subjects) p <- p + geom_line(aes_string(group=Subject_ID))
+  return(p)
+}
+
+
+boxplot_repeated_measures(ps = ps.rare.genus, taxa = taxa2[1:9], Group = "Treatment", mark_subjects=F,beeswarm=F) + theme_bw()
+
+```
+
+## taxa boxplot
+
+
+## Summary
+
+
+# Environment details
+
+```{r close RDS}
+sessionInfo()
+```

@@ -1,0 +1,138 @@
+---
+title: "CLR transformations on unrarefied sparse count data"
+output:
+  html_document:
+    toc: true # table of content true
+    toc_depth: 2  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+author: "M. Davids"
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r setup rmd, include=FALSE}
+# setting global options for the rmd markdown
+knitr::opts_chunk$set(echo = T) # include chunck code
+knitr::opts_chunk$set(cache = F) # use chuck results from cache if not modified (speed)
+# knitr::opts_chunk$set(warning = F) # suppress warnings
+# knitr::opts_chunk$set(comment = F) # suppress comments
+knitr::opts_chunk$set(message = F) # suppress messages
+```
+
+# Introduction
+
+One of the most debated procedures in microbiome data analysis is how we normalize the data. Especially the application of rarefaction to correct for differences in sequencing depth has been [controversial](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003531). Most arguments against it are from the perspective of data loss and subsequent unnecessary type 2 errors. While I agree that data is lost and type 2 errors might be more frequent, it does require other approaches to account for possible bias due to sampling efforts. 
+
+CLR-transformation has been proposed to counter the issue of differences in sequencing depth. CLR transformation of a vector is done by computing log(x) - mean(log(x)).
+Since the basis of the transformation is based on taking (natural) log, zeros in the data need to be adjusted with a pseudo count.
+
+The following analysis shows how a potential bias in sequencing depth will persist upon CLR-transformation.
+
+# Load the required packages
+
+```{r environment, include=T, echo=T, message=F, cache=F}
+library(phyloseq)
+library(tidyverse)
+library(microbiome)
+library(vegan)
+```
+
+# Read & wrangle data
+
+I will generate a dataset by randomly sub sampling a single sample but with varying depths.
+Since all samples are generated from a single population, no differences should be observed.
+The original sample in this case is a positive control mock sample with close to 500000 counts.
+
+```{r, include=T, echo=T}
+ps <- readRDS("Data_files/ps.CONTROLE_LIBRARIES.RDS")
+ps.select <- prune_samples(names(tail(sort(sample_sums(ps)), n=1)), ps) # take the sample with most counts
+ps.select <- prune_taxa(taxa_sums(ps.select)!=0, ps.select) # remove zero count features
+ps.select
+sample_sums(ps.select)
+```
+
+Code to generate the samples with varying sequencing depth.
+
+```{r, include=T, echo=T, warning=T, message=F}
+ps.list <- lapply(seq(10000, 200000, 10000), function(x) rarefy_even_depth(physeq = ps.select, sample.size = x, rngseed = 211202, replace = F, trimOTUs = F))
+
+names(ps.list) <- paste0("depth_",seq(10000, 200000, 10000))
+
+rename_sample_name <- function(ps, name){
+  sample_names(ps) <- name
+  return(ps)
+}
+
+ps.list.renamed <- lapply(names(ps.list), function(x) rename_sample_name(ps.list[[x]], name = x))
+ps.merged <- do.call(merge_phyloseq, ps.list.renamed)
+```
+
+Transformation of the data
+
+```{r}
+ps.merged@sam_data$Seq_Depth <- sample_sums(ps.merged)
+ps.merged@sam_data$min_count <- apply(ps.merged@otu_table,2,min)
+ps.merged.clr <- microbiome::transform(ps.merged, "clr")
+
+ps.merged.scaled <- transform_sample_counts(ps.merged, function(x) x/sum(x))
+pc <- unique(sort(ps.merged.scaled@otu_table@.Data))[2]/2
+ps.merged.clr <- transform_sample_counts(ps.merged.scaled, function(x) log(x+pc) - mean(log(x+pc)))
+
+ps.merged.clr@sam_data$min_coun_clr <- apply(ps.merged.clr@otu_table,2,min)
+```
+
+Statistical test if sequencing depth contributes significantly to the beta-diversity.
+Since data is CLR transformed I can use the euclidean distance matrix.
+
+```{r}
+d <- phyloseq::distance(ps.merged.clr, "euclidean")
+vegan::adonis2(d~ps.merged.clr@sam_data$Seq_Depth,permutations = 99999)
+```
+
+These results show that a significant proportion of the variance in the data, even after scaling and clr transformation, can be attributed to the artificial sequencing depth. Since the only source of variance is noise (random sub sampling) and sequencing depth we can conclude that CLR-transformation does not alleviate the need to account for differences in sequencing depth.
+
+Visualizing the results in a PCoA, we can clearly observe the gradient of sequencing depth along the a well known horse shoe pattern.
+
+```{r}
+ord <- ordinate(ps.merged.clr, "PCoA", "euclidean")
+plot_ordination(ps.merged.clr, ord, label="Sample", color="Seq_Depth") + 
+  theme_bw() + 
+  scale_color_viridis_c()
+```
+
+# The issue
+
+I think the main problem is that sequence depth gets encoded, especially into the zero counts. Since microbiome data is very sparse and many features are zeros sequence depth gets encoded into the distance matrix. This issue would also be observed for individual taxa. Thus CLR-transformation does not address any sampling depth bias when testing for differences in microbiome composition or differential taxa abundance. 
+
+The following figure shows how sequencing depth gets encoded in the zero count features.
+
+```{r}
+taxa <- names(sort(taxa_sums(ps.merged))[1])
+
+psm <- psmelt(prune_taxa(taxa, ps.merged.clr))
+
+library(tidyverse)
+ggplot(psm %>% data.frame(), aes(x=Seq_Depth, y=Abundance)) + 
+  geom_point() +
+  labs(title=taxa) + 
+  theme_bw()
+```
+
+# Conclusion
+
+Since clr transformation does not remove a potential bias from sequencing depth I still recommend to rarefy the data before alpha, beta and taxa abundance analysis.
+At the least, sequencing depth should be considered in the statistical model when data is not rarefied even if data is clr transformed. 
+
+# Environment details
+
+```{r close RDS}
+sessionInfo()
+```

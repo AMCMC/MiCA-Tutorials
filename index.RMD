@@ -49,3 +49,8 @@ This repo should serve as basic library of tutorials for microbiome analysis.
   [XGBoost]
   
   [Extremly randomized forrest]
+  
+
+# Proving points and random chunks
+
+[CLR transformation and rarefying](https://amcmc.github.io/MiCA-Tutorials/Rarefy_clr_beta.html)

@@ -1,0 +1,187 @@
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+---
+title: "Procrustes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Procrustes analysis 
+
+Procrustes analysis is used to analyze whether two multidimensional datasets correlate.
+I use it to answer the question whether subjects alike in one dataset, are also more alike in the other multidimensional dataset. 
+
+Here i show some exemplary code used to test a possible relation between fecal microbiome composition and fecal miRNA composition. (ref pending)[sddsf]
+
+[Alternative background reading](https://john-quensen.com/tutorials/procrustes-analysis/)
+
+# Load the required packages
+
+```{r environment, include=T, echo=T, message=F}
+library(phyloseq)
+library(vegan)
+library(ggplot2)
+library(grid)
+
+reorder_phyloseq <- function(ps, order){
+  if (!taxa_are_rows(ps)){otu <- ps@otu_table[order,]} else {otu <- ps@otu_table[,order]}
+  if(!is.null(ps@sam_data)){samdat <- ps@sam_data[order,]} else {samdat <- NULL}
+  if(!is.null(ps@tax_table)){tax <- ps@tax_table} else {tax <- NULL}
+  if(!is.null(ps@phy_tree)){tree <- ps@phy_tree} else {tree <- NULL}
+  psr <- phyloseq(otu, samdat, tax, tree)
+  return(psr)
+}
+
+colorvec <- ggpubr::get_palette(palette = "uchicago", k=5)
+colorvec <- colorvec[c(1,4,3,5)]
+
+names(colorvec) <- c("MIRNABL","MIRNAPFMT", "16SBL","16SPFMT")
+```
+
+
+```{r}
+ps.miRNA <- readRDS("./Data_files//ps.miRNA.curated2.RDS")
+ps.16S <- readRDS("./Data_files//ps.16S.curated2.RDS")
+```
+
+# Select subsets
+
+```{r}
+ps.miRNA.baseline <- prune_samples(ps.miRNA@sam_data$Time_Point!=2, ps.miRNA)
+ps.16S.baseline <- prune_samples(ps.16S@sam_data$Time_Point==0, ps.16S)
+
+ps.miRNA.paired <- prune_samples(ps.miRNA@sam_data$Subject_ID %in% names(which(table(ps.miRNA@sam_data$Subject_ID)==2)), ps.miRNA)
+ps.16S.paired <- prune_samples(ps.16S@sam_data$Subject_ID %in% names(which(table(ps.16S@sam_data$Subject_ID)==2)), ps.16S)
+
+ps.16S.baseline.matched <- prune_samples(ps.16S.baseline@sam_data$Subject_ID %in% ps.miRNA.baseline@sam_data$Subject, ps.16S.baseline)
+ps.miRNA.baseline.matched <- prune_samples(ps.miRNA.baseline@sam_data$Subject %in% ps.16S@sam_data$Subject_ID, ps.miRNA.baseline)
+
+ps.16S.paired.matched <- prune_samples(ps.16S.paired@sam_data$Subject_ID %in% names(which(table(ps.miRNA.paired@sam_data$Subject_ID)==2)), ps.16S.paired)
+ps.miRNA.paired.matched <- prune_samples(ps.miRNA.paired@sam_data$Subject_ID %in% names(which(table(ps.16S.paired@sam_data$Subject_ID)==2)), ps.miRNA.paired)
+
+ps.16S.baseline.matched <- prune_samples(ps.16S.baseline@sam_data$Subject_ID %in% ps.16S.paired.matched@sam_data$Subject, ps.16S.baseline)
+ps.miRNA.baseline.matched <- prune_samples(ps.miRNA.baseline@sam_data$Subject %in% ps.16S.paired.matched@sam_data$Subject_ID, ps.miRNA.baseline)
+ps.16S.paired.matched <- reorder_phyloseq(ps.16S.paired.matched, sample_names(ps.miRNA.paired.matched))
+```
+
+# Distance matrix
+
+We will use principle coordinate analysis (PCoA) to perform the ordination. For this we need to transform the data into a distance matrix. In both cases we do clr transformation before we calculate the euclidean distance. 
+
+Other ordination methods, like principal component analysis, can also be used.
+
+
+```{r}
+dis.16s <- as.matrix(phyloseq::distance(microbiome::transform(ps.16S.baseline.matched, "clr"), "euclidean"))
+dis.miRNA <- as.matrix(phyloseq::distance(microbiome::transform(ps.miRNA.baseline.matched, "clr"), "euclidean"))
+
+dis.16s <- dis.16s[row.names(dis.16s),row.names(dis.16s)]
+dis.miRNA <- dis.miRNA[row.names(dis.16s),row.names(dis.16s)]
+
+row.names(dis.16s)==row.names(dis.miRNA)
+```
+
+# Ordinate
+
+```{r}
+pcoa.16S <- ape::pcoa(dis.16s)
+pcoa.miRNA <- ape::pcoa(dis.miRNA)
+pcoa.16S$scores <- pcoa.16S$vectors
+pcoa.miRNA$scores <- pcoa.miRNA$vectors
+
+plot_ordination(ps.16S.baseline.matched, pcoa.16S) + 
+  ggrepel::geom_text_repel(aes(label=Subject_ID)) +
+  labs(title="PCoA 16S (euclidean-clr)")
+
+plot_ordination(ps.miRNA.baseline.matched, pcoa.miRNA) + 
+  ggrepel::geom_text_repel(aes(label=Subject_ID)) +
+  labs(title="PCoA miRNA (euclidean-clr)")
+```
+
+# Procrustes 
+
+```{r}
+proc.lip.16S.bray <- procrustes(pcoa.miRNA, pcoa.16S)
+plot(proc.lip.16S.bray)
+plot(proc.lip.16S.bray, kind=2)
+
+ctest <- data.frame(rda1=proc.lip.16S.bray$Yrot[,1],
+                    rda2=proc.lip.16S.bray$Yrot[,2],xrda1=proc.lip.16S.bray$X[,1],
+                    xrda2=proc.lip.16S.bray$X[,2])
+
+ctest <- cbind(ctest, ps.16S.baseline.matched@sam_data[rownames(ctest),])
+ctest$FMT <- factor(ctest$FMT, levels=c(levels(ctest$FMT),"Donor"))
+ctest$color <- factor("MIRNABL", levels = names(colorvec))
+ctest$color2 <- factor("16SBL", levels = names(colorvec))
+
+p.procust <- ggplot(ctest,drop=FALSE) +
+  theme_bw() + 
+  geom_point(aes(x=rda1, y=rda2, color=color, shape=FMT),drop=FALSE, size=3) +
+  geom_point(aes(x=xrda1, y=xrda2, color=color2, shape=FMT),drop=FALSE, size=3) +
+  geom_segment(aes(x=rda1,y=rda2,xend=xrda1,yend=xrda2,colour=color),arrow=arrow(length=unit(0.2,"cm")),drop=FALSE, alpha=0.5) +
+  scale_color_manual(values = colorvec,drop=T) + 
+  #labs(title="Microbiome miRNA procrustus ordination") +
+  ggrepel::geom_text_repel(aes(x=xrda1, y=xrda2, label=Subject_ID)) + 
+  NULL; plot(p.procust)
+```
+
+# Protest
+
+To test wheter the found correlation is significant, a permutation test is performed using protest.
+
+```{r}
+protest(pcoa.miRNA,pcoa.16S, permutations = 9999)
+```
+
+# Protest permutation
+
+```{r}
+res <- list()
+for (i in 1:999){
+  pcoa.miRNA$scores <- pcoa.miRNA$vectors[sample(row.names(pcoa.miRNA$vectors)),]
+  res[[i]] <- protest(pcoa.miRNA,pcoa.16S, permutations = 1)
+}
+
+pcoa.miRNA$scores <- pcoa.miRNA$vectors
+
+hist(unlist(lapply(res, function(x) x$t0)), breaks = 20); abline(v = protest(pcoa.miRNA,pcoa.16S, permutations = 1)$t0, color="red")
+```
+
+
+
+# euclidean distance PCoA = PCA 
+
+```{r, warning=F}
+pca.16 <- prcomp((microbiome::transform(ps.16S.baseline.matched, "clr")@otu_table@.Data))
+proc.lip.16S.bray <- procrustes(pca.16, pcoa.16S)
+plot(proc.lip.16S.bray)
+```
+
+# PCA vs bray
+
+```{r, warning=F}
+dis.16s <- as.matrix(phyloseq::distance(ps.16S.baseline.matched, "bray"))
+pcoa.16S <- ape::pcoa(dis.16s)
+pcoa.16S$scores <- pcoa.16S$vectors[,sample(colnames(pcoa.16S$vectors))] # The order of the components does not matter
+
+proc.lip.16S.bray <- procrustes(pca.16, pcoa.16S)
+plot(proc.lip.16S.bray)
+plot(proc.lip.16S.bray, kind = 2)
+protest(pca.16, pcoa.16S, permutations = 99999)
+```
+
+
+# Environment details
+
+```{r close RDS}
+sessionInfo()
+```
